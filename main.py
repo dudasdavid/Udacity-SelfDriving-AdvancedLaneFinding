@@ -96,6 +96,7 @@ def process_frame(img, left_lane, right_lane):
     # Create an empty image for the histogram
     hist = utils.draw_histogram(histogram, 64)
 
+    #left_lane.reliable = False
     if left_lane.reliable and right_lane.reliable:
 
         leftx, lefty = utils.search_around_poly(birdseye, left_lane.get_poly())
@@ -104,7 +105,8 @@ def process_frame(img, left_lane, right_lane):
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
 
-        print(left_lane.best_fit)
+        #print(left_lane.best_fit)
+        out_img = birdseye.copy()
 
     else:
         leftx, lefty, rightx, righty, out_img = utils.find_lane_pixels(birdseye)
@@ -112,7 +114,7 @@ def process_frame(img, left_lane, right_lane):
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
 
-    out_img = utils.draw_lane_pixels(birdseye, left_lane, color=(0, 0, 255))
+    out_img = utils.draw_lane_pixels(out_img, left_lane, color=(0, 0, 255))
     out_img = utils.draw_lane_pixels(out_img, right_lane)
     out_img = utils.draw_poly(out_img, left_lane, width=5)
     out_img = utils.draw_poly(out_img, right_lane, width=5)
@@ -188,6 +190,13 @@ def main():
             cv2.putText(output, label_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         #print(utils.calculate_lane_curvature(left_lane, right_lane))
+        left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
+        label_text = f"Left lane curvature: {left_curvature:.1f} m"
+        cv2.putText(output, label_text, (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        label_text = f"Right lane curvature: {right_curvature:.1f} m"
+        cv2.putText(output, label_text, (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        label_text = f"Lane center offset: {horizontal_offset:.1f} m"
+        cv2.putText(output, label_text, (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         # Show the output image and save the output video
         cv2.imshow('Frame', output)
