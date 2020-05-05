@@ -68,10 +68,10 @@ class Lane:
         return avg
 
     def recovery(self):
-
-        self.x = self.x_backup
-        self.y = self.y_backup
-        self.best_fit = self.best_fit_backup
+        if self.best_fit_backup != None:
+            self.x = self.x_backup
+            self.y = self.y_backup
+            self.best_fit = self.best_fit_backup
 
         self.update_coordintes(self.x, self.y)
 

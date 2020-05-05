@@ -54,11 +54,10 @@ def process_test_images():
         ax4.set_title('Birdseye', fontsize=fs)
 
         plt.subplots_adjust(left=0., right=1, top=0.9, bottom=0.)
-        plt.show()
+        #plt.show()
         plt.savefig('test_images/camera_figures_' + image_)
         plt.close()
 
-        break
 
         gray = utils.convert_to_gray(undistorted)
         R, G, B = utils.convert_to_rgb(undistorted)
@@ -182,7 +181,7 @@ def process_test_images():
         ax3.set_title("Histogram Of Pixel Intensities (Image Bottom Half)")
 
         plt.subplots_adjust(left=0., right=1, top=0.9, bottom=0.)
-        plt.show()
+        #plt.show()
         plt.savefig('test_images/birdseye_figures_' + image_)
         plt.close()
 

@@ -41,7 +41,7 @@ def process_frame(img, left_lane, right_lane):
 
     # define roi and destination region that will be used for bird's perspective
     src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]]) ### first project video
-    src_region = np.array([[[140, h], [550, 475], [w - 550, 475], [w - 140, h]]]) ### challenge video
+    #src_region = np.array([[[140, h], [550, 475], [w - 550, 475], [w - 140, h]]]) ### challenge video
     #src_region = np.array([[[20, h], [300, 480], [w - 300, 480], [w - 20, h]]])
 
     dst_region = np.array([[[360, h], [0, 0], [w - 0, 0], [w - 360, h]]])
@@ -65,9 +65,9 @@ def process_frame(img, left_lane, right_lane):
     # calculate 1 channel images in HLS representation
     H, L, S = utils.convert_to_hls(undistorted)
     # apply binary threshold on S channel
-    #S = utils.threshold_binary(S, (50, 220)) ### project video parameter
+    S = utils.threshold_binary(S, (50, 220)) ### project video parameter
     #S = utils.threshold_binary(S, (20, 150)) ### challenge video
-    S = utils.threshold_binary(S, (20, 255))
+    #S = utils.threshold_binary(S, (20, 255))
 
     # apply roi mask on S channel
     masked_S = cv2.bitwise_and(S, mask)
@@ -77,9 +77,9 @@ def process_frame(img, left_lane, right_lane):
     ksize = 17  # Choose a larger odd number to smooth gradient measurements
 
     # Apply each of the thresholding functions
-    #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
-    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(60, 110))
-    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(20, 110))
+    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
+    #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(60, 110))
+    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
     #mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 200)) ### project video parameter
     mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(50, 200))
     dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
@@ -127,7 +127,8 @@ def process_frame(img, left_lane, right_lane):
         left_lane.recovery()
         right_lane.recovery()
 
-    if abs(start_width - end_width) > 100 or abs(start_width) < 600 or abs(end_width) < 400:
+    print(abs(start_width - end_width), abs(start_width), abs(end_width))
+    if abs(start_width - end_width) > 100 or abs(start_width) < 400 or abs(end_width) < 350:
         left_lane.recovery()
         right_lane.recovery()
 
@@ -207,7 +208,7 @@ def main():
             cv2.putText(output, label_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         #print(utils.calculate_lane_curvature(left_lane, right_lane))
-        if len(left_lane.x) > 0:
+        if left_lane.best_fit is not None:
             left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
             label_text = f"Left lane curvature: {np.absolute(left_curvature):.1f} m"
             cv2.putText(output, label_text, (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
