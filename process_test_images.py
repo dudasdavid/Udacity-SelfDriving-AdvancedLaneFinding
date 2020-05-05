@@ -6,10 +6,12 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 
+# import camera calibration files
 dist_pickle = pickle.load(open("camera_cal/cal_pickle.p", "rb"))
 mtx = dist_pickle["mtx"]
 dist = dist_pickle["dist"]
 
+# font size for plotting
 fs = 20
 
 def process_test_images():
@@ -18,25 +20,29 @@ def process_test_images():
     for image_ in image_list:
         if (not image_.endswith('.jpg')) or "undistorted" in image_ or "figure" in image_:
             continue
-        # Read in and grayscale the image
+        # Read the image and determine sizes
         image = mpimg.imread('test_images/' + image_)
         w, h = image.shape[1], image.shape[0]
 
+        # undistort the image
         undistorted = utils.undistort_image(image, mtx, dist)
 
+        # save unditorted images
         mpimg.imsave('test_images/undistorted_' + image_, undistorted)
 
-
+        # select source and destination regions for bird's perspective transformation
         src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]])
         dst_region = np.array([[[360, h], [0, 0], [w-0, 0], [w-360, h]]])
 
+        # calculate transformation matrices to warp and un-warp images
         M, M_inv = utils.calc_transformation_matrices(src_region, dst_region)
 
-        # Show: Selected Region
+        # Show selected regions
         region_img = np.copy(undistorted)
         cv2.polylines(region_img, src_region, True, (0, 0, 255), 5)
         cv2.polylines(region_img, dst_region, True, (0, 255, 0), 2)
 
+        # do the bird's view transformation
         birdseye = utils.warp_transform(undistorted, M)
         cv2.polylines(birdseye, np.array([[[370, h], [370, 0], [w-370, 0], [w-370, h]]]), True, (0, 255, 0), 2)
 
@@ -58,12 +64,10 @@ def process_test_images():
         plt.savefig('test_images/camera_figures_' + image_)
         plt.close()
 
-
-        gray = utils.convert_to_gray(undistorted)
+        # convert to separate RGB, HLS and HSV channels
         R, G, B = utils.convert_to_rgb(undistorted)
         hls_H, hls_L, hls_S = utils.convert_to_hls(undistorted)
         hsv_H, hsv_S, hsv_V = utils.convert_to_hsv(undistorted)
-
 
         # Plot the result
         f, ((ax1, ax2, ax3), (ax4, ax5, ax6), (ax7, ax8, ax9)) = plt.subplots(3, 3, figsize=(24, 9))
@@ -94,10 +98,9 @@ def process_test_images():
         plt.savefig('test_images/color_figures_' + image_)
         plt.close()
 
-        ### HLS's S channel is the best bet for both white and yellow lines
+        # HLS's S channel is the best bet for both white and yellow lines, let's apply a binary threshold
         S_th = utils.threshold_binary(hls_S, (90, 255))
 
-        # Display the image
         # Plot the result
         f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
         f.tight_layout()
@@ -110,18 +113,19 @@ def process_test_images():
         plt.savefig('test_images/color_th_figures_' + image_)
         plt.close()
 
-        # Choose a Sobel kernel size
+        # Choose a Sobel kernel size for gradient thresholding
         ksize = 17  # Choose a larger odd number to smooth gradient measurements
 
-        # Run the functions
         # Apply each of the thresholding functions
         gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(20, 110))
         grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(20, 110))
         mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 200))
         dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi/4, np.pi/2))
 
+        # combine thresholds
         combined = np.zeros_like(dir_binary)
         combined[(gradx == 1) | ((grady == 1) & (mag_binary == 1) & (dir_binary == 1))] = 1
+
         # Plot the result
         f, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(24, 9))
         f.tight_layout()
@@ -144,6 +148,7 @@ def process_test_images():
         plt.savefig('test_images/gradient_th_figures_' + image_)
         plt.close()
 
+        # stack S channel and gradient thresholds
         result, result_binary = utils.stack_binaries(combined, S_th)
 
         # Plot the result
@@ -164,6 +169,7 @@ def process_test_images():
         plt.savefig('test_images/pipeline_figures_' + image_)
         plt.close()
 
+        # transform filtered image to bird's view perspective
         birdseye_binary = utils.warp_transform(result_binary, M)
         histogram = utils.hist(birdseye_binary/255)
 

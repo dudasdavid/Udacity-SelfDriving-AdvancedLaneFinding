@@ -5,38 +5,36 @@ import numpy as np
 # Define a class to receive the characteristics of each line detection
 class Lane:
     def __init__(self):
-        # was the line detected in the last iteration?
-        self.detected = False
-        #polynomial coefficients averaged over the last n iterations
+
+        # polynomial coefficients averaged over the last n iterations
         self.best_fit = None
         self.best_fit_backup = None
-        #polynomial coefficients for the most recent fit
+        # polynomial coefficients for the most recent fit
         self.current_fit = [np.array([False])]
-        #radius of curvature of the line in some units
-        self.radius_of_curvature = None
-        #distance in meters of vehicle center from the line
-        self.line_base_pos = None
-        #x values for detected line pixels
+        # x values for detected line pixels
         self.x = []
         self.x_backup = []
-        #y values for detected line pixels
+        # y values for detected line pixels
         self.y = []
         self.y_backup = []
-
+        # lane reliability
         self.reliable = False
-
+        # polynomial parameters
         self.ploty = None
         self.fitx = None
+        # image shape, this can be a parameter for later use
         self.imshape = (720, 1280, 3)
 
+    # parameter setter function
     def update_poly(self, fit):
         self.current_fit = fit
         self.best_fit = fit
 
-
+    # parameter getter function
     def get_poly(self):
         return self.current_fit
 
+    # parameter setter function
     def update_coordintes(self, x, y):
         self.best_fit_backup = self.best_fit
         self.x_backup = self.x
@@ -59,14 +57,16 @@ class Lane:
 
         self.reliable = True
 
-
+    # parameter getter function
     def get_coordinates(self):
         return self.x, self.y
 
+    # apply a simple IIR filter on data
     def filter_poly(self, new, avg, a=0.1):
         avg = (a * new) + (1.0 - a) * avg
         return avg
 
+    # recovery action if lane sanity check fails
     def recovery(self):
         if self.best_fit_backup != None:
             self.x = self.x_backup
@@ -78,12 +78,12 @@ class Lane:
         self.reliable = False
 
 
-
-
+# convert to grayscale image
 def convert_to_gray(img):
     return cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
 
+# convert to RGB channels
 def convert_to_rgb(img):
     R = img[:, :, 0]
     G = img[:, :, 1]
@@ -92,6 +92,7 @@ def convert_to_rgb(img):
     return R, G, B
 
 
+# convert to HLS color space
 def convert_to_hls(img):
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     H = hls[:, :, 0]
@@ -101,6 +102,7 @@ def convert_to_hls(img):
     return H, L, S
 
 
+# convert to HSV color space
 def convert_to_hsv(img):
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
     H = hsv[:, :, 0]
@@ -110,6 +112,7 @@ def convert_to_hsv(img):
     return H, S, V
 
 
+# apply threshold and result a binary image
 def threshold_binary(img, thresh=(200, 255)):
     binary = np.zeros_like(img)
     binary[(img >= thresh[0]) & (img <= thresh[1])] = 1
@@ -117,12 +120,14 @@ def threshold_binary(img, thresh=(200, 255)):
     return binary
 
 
+# undistort an image with camera calibration parameters
 def undistort_image(img, mtx, dist):
     undist = cv2.undistort(img, mtx, dist, None, mtx)
 
     return undist
 
 
+# calculate bird's view warp and un-warp matrices
 def calc_transformation_matrices(src, dst):
     M     = cv2.getPerspectiveTransform(np.float32(src), np.float32(dst))
     M_inv = cv2.getPerspectiveTransform(np.float32(dst), np.float32(src))
@@ -130,11 +135,13 @@ def calc_transformation_matrices(src, dst):
     return M, M_inv
 
 
+# apply warp on an image with a transformation matrix
 def warp_transform(img, M):
     w, h = img.shape[1], img.shape[0]
     return cv2.warpPerspective(img, M, (w, h), flags=cv2.INTER_LINEAR)
 
 
+# sobel threshold
 def abs_sobel_thresh(img, orient='y', sobel_kernel=3, thresh=(0, 255)):
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -155,7 +162,7 @@ def abs_sobel_thresh(img, orient='y', sobel_kernel=3, thresh=(0, 255)):
     return binary_output
 
 
-# Define a function to return the magnitude of the gradient
+# function to return the magnitude of the gradient
 # for a given sobel kernel size and threshold values
 def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
     # Convert to grayscale
@@ -176,7 +183,7 @@ def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
     return binary_output
 
 
-# Define a function to threshold an image for a given range and Sobel kernel
+# function to threshold an image for a given range and Sobel kernel
 def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     # Grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -193,6 +200,7 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     return binary_output
 
 
+# combine two binary images with OR
 def stack_binaries(gradient, color):
     # Stack each channel
     color_binary = np.dstack((gradient, color, np.zeros_like(gradient))) * 255
@@ -204,6 +212,7 @@ def stack_binaries(gradient, color):
     return color_binary, combined_binary
 
 
+# calculates the histogram of the bottom of an image
 def hist(img):
     # Grab only the bottom half of the image
     # Lane lines are likely to be mostly vertical nearest to the car
@@ -216,8 +225,8 @@ def hist(img):
     return histogram
 
 
+# histogram drawing function
 def draw_histogram(data_array, nbins = 64):
-
 
     # Create an empty image for the histogram
     hist = np.zeros((240, 320), dtype=np.uint8)
@@ -237,11 +246,15 @@ def draw_histogram(data_array, nbins = 64):
     return hist
 
 
+# add small images to the top row of the main image
 def add_small_pictures(img, small_images, size=(220, 124)):
-    """
-    Returns a new image made up of the lane area image, and the remaining lane images are overlaid as
-    small images in a row at the top of the the new image
-    """
+    '''
+    :param img: main image
+    :param small_images: array of small images
+    :param size: size of small images
+    :return: overlayed image
+    '''
+
     x_base_offset = 20
     y_base_offset = 50
 
@@ -257,14 +270,13 @@ def add_small_pictures(img, small_images, size=(220, 124)):
 
         x_offset += size[0] + x_base_offset
 
-
-
     return img
 
 
+# find lane lines without any previous data
 def find_lane_pixels(binary_warped, nwindows = 9, margin = 100, minpix = 70):
     '''
-    :param binary_warped:
+    :param binary_warped: bird's view image
     :param nwindows: the number of sliding windows
     :param margin: Set the width of the windows +/- margin
     :param minpix: Set minimum number of pixels found to recenter window
@@ -347,13 +359,15 @@ def find_lane_pixels(binary_warped, nwindows = 9, margin = 100, minpix = 70):
     return leftx, lefty, rightx, righty, out_img
 
 
+# Fit a second order polynomial to each with np.polyfit()
 def fit_poly(x, y):
-    # Fit a second order polynomial to each with np.polyfit()
+
     fit = np.polyfit(y, x, 2)
 
     return fit
 
 
+# numerically calculates the polynomial values
 def calc_poly(img_shape, fit):
     # Generate x and y values for plotting
     ploty = np.linspace(0, img_shape[0] - 1, img_shape[0])
@@ -363,11 +377,11 @@ def calc_poly(img_shape, fit):
     return ploty, fitx
 
 
+# find lines around the previous polynomial
 def search_around_poly(binary_warped, fit, margin=100):
     '''
-
-    :param binary_warped:
-    :param fit:
+    :param binary_warped: bird's view image
+    :param fit: previous polynomal
     :param margin: the width of the margin around the previous polynomial to search
     :return:
     '''
@@ -391,7 +405,9 @@ def search_around_poly(binary_warped, fit, margin=100):
 
     return x, y
 
-def draw_poly(img, lane, color = (0, 255, 255), width = 5):
+
+# draw a single polynomial "line" on an image
+def draw_poly(img, lane, color=(0, 255, 255), width=5):
 
     fit = lane.get_poly()
 
@@ -422,6 +438,7 @@ def draw_poly(img, lane, color = (0, 255, 255), width = 5):
     return result
 
 
+# color the pixels of a lane
 def draw_lane_pixels(img, lane, color=(255, 0, 0)):
 
     ## Visualization ##
@@ -439,9 +456,15 @@ def draw_lane_pixels(img, lane, color=(255, 0, 0)):
     return out_img
 
 
+# draw the un-warped lane overlay onto the original image
 def draw_lane_area(warped_img, undist_img, left_lane, right_lane, M_inv):
     """
-    Returns an image where the inside of the lane has been colored in bright green
+    :param warped_img: warped bird's view image
+    :param undist_img: original undistorted image
+    :param left_lane: left lane instance
+    :param right_lane: right lane instance
+    :param M_inv: transformation matrix for un-warping
+    :return:
     """
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped_img).astype(np.uint8)
@@ -467,9 +490,17 @@ def draw_lane_area(warped_img, undist_img, left_lane, right_lane, M_inv):
 
     return result
 
+
+# draw the un-warped lane borders onto the original image
 def draw_lane_lines(warped_img, undist_img, left_lane, right_lane, M_inv, width):
     """
-    Returns an image where the inside of the lane has been colored in bright green
+    :param warped_img: warped bird's view image
+    :param undist_img: original undistorted image
+    :param left_lane: left lane instance
+    :param right_lane: right lane instance
+    :param M_inv: transformation matrix for un-warping
+    :param width: line width
+    :return:
     """
     # Create an image to draw the lines on
     window_img = np.zeros_like(warped_img).astype(np.uint8)
@@ -503,6 +534,7 @@ def draw_lane_lines(warped_img, undist_img, left_lane, right_lane, M_inv, width)
     return result
 
 
+# calculate lane curvature in real world m
 def calculate_lane_curvature(left_line, right_line):
     """
     Returns the triple (left_curvature, right_curvature, lane_center_offset), which are all in meters
@@ -514,7 +546,6 @@ def calculate_lane_curvature(left_line, right_line):
 
     ploty = left_line.ploty
     y_eval = np.max(ploty)
-    # Define conversions in x and y from pixels space to meters
 
     leftx = left_line.fitx
     rightx = right_line.fitx
@@ -523,7 +554,7 @@ def calculate_lane_curvature(left_line, right_line):
     left_fit_cr = np.polyfit(ploty * ym_per_pix, leftx * xm_per_pix, 2)
     right_fit_cr = np.polyfit(ploty * ym_per_pix, rightx * xm_per_pix, 2)
 
-    # Now calculate the radii of the curvature
+    # Calculation of R_curve (radius of curvature)
     left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / (2 * left_fit_cr[0])
     right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / (2 * right_fit_cr[0])
 
@@ -531,8 +562,8 @@ def calculate_lane_curvature(left_line, right_line):
     left_fit = left_line.best_fit
     right_fit = right_line.best_fit
 
+    # calculate vehicle center offset
     center_offset_img_space = (((left_fit[0] * y_eval ** 2 + left_fit[1] * y_eval + left_fit[2]) + (right_fit[0] * y_eval ** 2 + right_fit[1] * y_eval + right_fit[2])) / 2) - lane_center_pix
     center_offset_real_world_m = center_offset_img_space * xm_per_pix
 
-    # Now our radius of curvature is in meters
     return left_curverad, right_curverad, center_offset_real_world_m

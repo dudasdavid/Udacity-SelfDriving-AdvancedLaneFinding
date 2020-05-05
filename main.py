@@ -23,15 +23,7 @@ dist_pickle = pickle.load(open("camera_cal/cal_pickle.p", "rb"))
 mtx = dist_pickle["mtx"]
 dist = dist_pickle["dist"]
 
-#Set hist parameters
-hist_height = 64
-hist_width = 256
-nbins = 32
-bin_width = hist_width/nbins
-
-
-
-
+# This is the image processing pipeline
 def process_frame(img, left_lane, right_lane):
     # get frame dimensions for later use
     w, h = img.shape[1], img.shape[0]
@@ -40,10 +32,10 @@ def process_frame(img, left_lane, right_lane):
     undistorted = utils.undistort_image(img, mtx, dist)
 
     # define roi and destination region that will be used for bird's perspective
+    # this might be different for different scenarios
     src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]]) ### first project video
     #src_region = np.array([[[140, h], [550, 475], [w - 550, 475], [w - 140, h]]]) ### challenge video
-    #src_region = np.array([[[20, h], [300, 480], [w - 300, 480], [w - 20, h]]])
-
+    #src_region = np.array([[[20, h], [300, 480], [w - 300, 480], [w - 20, h]]]) ### harder challenge video
     dst_region = np.array([[[360, h], [0, 0], [w - 0, 0], [w - 360, h]]])
 
     # show selected regions on a copy image
@@ -55,7 +47,6 @@ def process_frame(img, left_lane, right_lane):
     M, M_inv = utils.calc_transformation_matrices(src_region, dst_region)
 
     # create a mask according to roi
-    gray = utils.convert_to_gray(img)
     mask = np.zeros((h, w), dtype=np.uint8)
     ignore_mask_color = 255
     cv2.fillPoly(mask, src_region, ignore_mask_color)
@@ -65,9 +56,10 @@ def process_frame(img, left_lane, right_lane):
     # calculate 1 channel images in HLS representation
     H, L, S = utils.convert_to_hls(undistorted)
     # apply binary threshold on S channel
+    # this might be different for different scenarios
     S = utils.threshold_binary(S, (50, 220)) ### project video parameter
     #S = utils.threshold_binary(S, (20, 150)) ### challenge video
-    #S = utils.threshold_binary(S, (20, 255))
+    #S = utils.threshold_binary(S, (20, 255)) ### harder challenge video
 
     # apply roi mask on S channel
     masked_S = cv2.bitwise_and(S, mask)
@@ -77,10 +69,10 @@ def process_frame(img, left_lane, right_lane):
     ksize = 17  # Choose a larger odd number to smooth gradient measurements
 
     # Apply each of the thresholding functions
+    # this might be different for different scenarios
     gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
-    #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(60, 110))
+    #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(60, 110)) ### challenge video
     grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
-    #mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 200)) ### project video parameter
     mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(50, 200))
     dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
 
@@ -103,40 +95,49 @@ def process_frame(img, left_lane, right_lane):
     # Create an empty image for the histogram
     hist = utils.draw_histogram(histogram, 64)
 
+    # If lanes are reliable let's find a polynomial near to the original polynomial
     if left_lane.reliable and right_lane.reliable:
 
+        # execute searching algorithm for both lines
         leftx, lefty = utils.search_around_poly(birdseye, left_lane.get_poly())
         rightx, righty = utils.search_around_poly(birdseye, right_lane.get_poly())
 
+        # update lane parameters
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
 
+        # create an out_img for later use
         out_img = birdseye.copy()
-
+    # if lanes aren't reliable let's try to find lane pixels from scratch
     else:
         leftx, lefty, rightx, righty, out_img = utils.find_lane_pixels(birdseye)
-
+        # update lane parameters
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
 
+    # calculate lane width and curvatures for sanity check
     start_width = right_lane.fitx[0] - left_lane.fitx[0]
     end_width = right_lane.fitx[-1] - left_lane.fitx[-1]
     left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
 
+    # if the 2 borders of the lane have opposite curvatures they aren't reliable and we have to recover the previous sample
     if (left_curvature > 0 and right_curvature < 0) or (left_curvature < 0 and right_curvature > 0):
         left_lane.recovery()
         right_lane.recovery()
 
-    print(abs(start_width - end_width), abs(start_width), abs(end_width))
+    #print(abs(start_width - end_width), abs(start_width), abs(end_width))
+    #If the lane shape is abnormal or it's too thin in the beginning or in the end they aren't reliable and we have to recover the previous sample
     if abs(start_width - end_width) > 100 or abs(start_width) < 400 or abs(end_width) < 350:
         left_lane.recovery()
         right_lane.recovery()
 
+    # draw the lane finding results on the image
     out_img = utils.draw_lane_pixels(out_img, left_lane, color=(0, 0, 255))
     out_img = utils.draw_lane_pixels(out_img, right_lane)
     out_img = utils.draw_poly(out_img, left_lane, width=5)
     out_img = utils.draw_poly(out_img, right_lane, width=5)
 
+    # un-warp the bird's view lane and overlay to the original image
     result = utils.draw_lane_area(birdseye, undistorted, left_lane, right_lane, M_inv)
     result = utils.draw_lane_lines(birdseye, result, left_lane, right_lane, M_inv, 10)
 
@@ -174,14 +175,16 @@ def main():
 
     # Create a video writer for the output video
     if not image_flag:
-        # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G')`
-        # on Mac, and `0x00000021` on Linux
+        # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G') on Mac,
+        # and `0x00000021` on Linux
+        # and `0x7634706d` on Windows
         out = cv2.VideoWriter('out.mp4', 0x7634706d, fps, (width, height))
     else:
         out = None
 
     fps_marking = True
 
+    # create lane instances
     left_lane = utils.Lane()
     right_lane = utils.Lane()
     # Loop until stream is over
@@ -196,6 +199,7 @@ def main():
         # start measuring overall execution time
         start_processing_time = time.time()
 
+        # apply the image processing pipeline
         output = process_frame(frame, left_lane, right_lane)
 
         # Measure overall FPS
