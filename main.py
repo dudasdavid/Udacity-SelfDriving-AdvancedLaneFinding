@@ -40,7 +40,10 @@ def process_frame(img, left_lane, right_lane):
     undistorted = utils.undistort_image(img, mtx, dist)
 
     # define roi and destination region that will be used for bird's perspective
-    src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]])
+    src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]]) ### first project video
+    src_region = np.array([[[140, h], [550, 475], [w - 550, 475], [w - 140, h]]]) ### challenge video
+    src_region = np.array([[[20, h], [300, 480], [w - 300, 480], [w - 20, h]]])
+
     dst_region = np.array([[[360, h], [0, 0], [w - 0, 0], [w - 360, h]]])
 
     # show selected regions on a copy image
@@ -62,7 +65,9 @@ def process_frame(img, left_lane, right_lane):
     # calculate 1 channel images in HLS representation
     H, L, S = utils.convert_to_hls(undistorted)
     # apply binary threshold on S channel
-    S = utils.threshold_binary(S, (50, 220))
+    #S = utils.threshold_binary(S, (50, 220)) ### project video parameter
+    #S = utils.threshold_binary(S, (20, 150)) ### challenge video
+    S = utils.threshold_binary(S, (255, 255))
 
     # apply roi mask on S channel
     masked_S = cv2.bitwise_and(S, mask)
@@ -72,8 +77,10 @@ def process_frame(img, left_lane, right_lane):
     ksize = 17  # Choose a larger odd number to smooth gradient measurements
 
     # Apply each of the thresholding functions
-    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
-    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
+    #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
+    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 110))
+    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(50, 110))
+    #mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 200)) ### project video parameter
     mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 200))
     dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
 
@@ -96,7 +103,6 @@ def process_frame(img, left_lane, right_lane):
     # Create an empty image for the histogram
     hist = utils.draw_histogram(histogram, 64)
 
-    #left_lane.reliable = False
     if left_lane.reliable and right_lane.reliable:
 
         leftx, lefty = utils.search_around_poly(birdseye, left_lane.get_poly())
@@ -105,7 +111,6 @@ def process_frame(img, left_lane, right_lane):
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
 
-        #print(left_lane.best_fit)
         out_img = birdseye.copy()
 
     else:
@@ -113,6 +118,18 @@ def process_frame(img, left_lane, right_lane):
 
         left_lane.update_coordintes(leftx, lefty)
         right_lane.update_coordintes(rightx, righty)
+
+    start_width = right_lane.fitx[0] - left_lane.fitx[0]
+    end_width = right_lane.fitx[-1] - left_lane.fitx[-1]
+    left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
+
+    if (left_curvature > 0 and right_curvature < 0) or (left_curvature < 0 and right_curvature > 0):
+        left_lane.recovery()
+        right_lane.recovery()
+
+    if abs(start_width - end_width) > 100:
+        left_lane.recovery()
+        right_lane.recovery()
 
     out_img = utils.draw_lane_pixels(out_img, left_lane, color=(0, 0, 255))
     out_img = utils.draw_lane_pixels(out_img, right_lane)
@@ -123,7 +140,7 @@ def process_frame(img, left_lane, right_lane):
     result = utils.draw_lane_lines(birdseye, result, left_lane, right_lane, M_inv, 10)
 
     # stack small images to the original frame
-    result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, S*255])
+    result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, masked_combined*255])
     return result
 
 
@@ -190,13 +207,14 @@ def main():
             cv2.putText(output, label_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         #print(utils.calculate_lane_curvature(left_lane, right_lane))
-        left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
-        label_text = f"Left lane curvature: {left_curvature:.1f} m"
-        cv2.putText(output, label_text, (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        label_text = f"Right lane curvature: {right_curvature:.1f} m"
-        cv2.putText(output, label_text, (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        label_text = f"Lane center offset: {horizontal_offset:.1f} m"
-        cv2.putText(output, label_text, (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        if len(left_lane.x) > 0:
+            left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
+            label_text = f"Left lane curvature: {np.absolute(left_curvature):.1f} m"
+            cv2.putText(output, label_text, (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            label_text = f"Right lane curvature: {np.absolute(right_curvature):.1f} m"
+            cv2.putText(output, label_text, (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            label_text = f"Lane center offset: {horizontal_offset:.1f} m"
+            cv2.putText(output, label_text, (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         # Show the output image and save the output video
         cv2.imshow('Frame', output)

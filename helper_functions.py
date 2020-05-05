@@ -9,6 +9,7 @@ class Lane:
         self.detected = False
         #polynomial coefficients averaged over the last n iterations
         self.best_fit = None
+        self.best_fit_backup = None
         #polynomial coefficients for the most recent fit
         self.current_fit = [np.array([False])]
         #radius of curvature of the line in some units
@@ -16,9 +17,11 @@ class Lane:
         #distance in meters of vehicle center from the line
         self.line_base_pos = None
         #x values for detected line pixels
-        self.x = None
+        self.x = []
+        self.x_backup = []
         #y values for detected line pixels
-        self.y = None
+        self.y = []
+        self.y_backup = []
 
         self.reliable = False
 
@@ -35,19 +38,24 @@ class Lane:
         return self.current_fit
 
     def update_coordintes(self, x, y):
+        self.best_fit_backup = self.best_fit
+        self.x_backup = self.x
+        self.y_backup = self.y
+
         self.x = x
         self.y = y
 
-        fit = list(fit_poly(self.x, self.y))
+        if (len(self.x) > 0):
+            fit = list(fit_poly(self.x, self.y))
 
-        if self.reliable == True:
-            fit[0] = self.filter_poly(fit[0], self.best_fit[0])
-            fit[1] = self.filter_poly(fit[1], self.best_fit[1])
-            fit[2] = self.filter_poly(fit[2], self.best_fit[2])
+            if self.reliable == True:
+                fit[0] = self.filter_poly(fit[0], self.best_fit[0])
+                fit[1] = self.filter_poly(fit[1], self.best_fit[1])
+                fit[2] = self.filter_poly(fit[2], self.best_fit[2])
 
-        self.ploty, self.fitx = calc_poly(self.imshape, fit)
+            self.ploty, self.fitx = calc_poly(self.imshape, fit)
 
-        self.update_poly(fit)
+            self.update_poly(fit)
 
         self.reliable = True
 
@@ -58,6 +66,18 @@ class Lane:
     def filter_poly(self, new, avg, a=0.1):
         avg = (a * new) + (1.0 - a) * avg
         return avg
+
+    def recovery(self):
+
+        self.x = self.x_backup
+        self.y = self.y_backup
+        self.best_fit = self.best_fit_backup
+
+        self.update_coordintes(self.x, self.y)
+
+        self.reliable = False
+
+
 
 
 def convert_to_gray(img):
@@ -242,7 +262,7 @@ def add_small_pictures(img, small_images, size=(220, 124)):
     return img
 
 
-def find_lane_pixels(binary_warped, nwindows = 9, margin = 100, minpix = 50):
+def find_lane_pixels(binary_warped, nwindows = 9, margin = 100, minpix = 70):
     '''
     :param binary_warped:
     :param nwindows: the number of sliding windows
@@ -276,6 +296,9 @@ def find_lane_pixels(binary_warped, nwindows = 9, margin = 100, minpix = 50):
     right_lane_inds = []
 
     # Step through the windows one by one
+
+    left_window_direction = None
+    right_window_direction = None
     for window in range(nwindows):
         # Identify window boundaries in x and y (and right and left)
         win_y_low = binary_warped.shape[0] - (window + 1) * window_height
@@ -501,20 +524,14 @@ def calculate_lane_curvature(left_line, right_line):
     right_fit_cr = np.polyfit(ploty * ym_per_pix, rightx * xm_per_pix, 2)
 
     # Now calculate the radii of the curvature
-    left_curverad = ((1 + (
-                2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
-        2 * left_fit_cr[0])
-    right_curverad = ((1 + (
-                2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
-        2 * right_fit_cr[0])
+    left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / (2 * left_fit_cr[0])
+    right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / (2 * right_fit_cr[0])
 
     # Use our computed polynomial to determine the car's center position in image space, then
     left_fit = left_line.best_fit
     right_fit = right_line.best_fit
 
-    center_offset_img_space = (((left_fit[0] * y_eval ** 2 + left_fit[1] * y_eval + left_fit[2]) +
-                                (right_fit[0] * y_eval ** 2 + right_fit[1] * y_eval + right_fit[
-                                    2])) / 2) - lane_center_pix
+    center_offset_img_space = (((left_fit[0] * y_eval ** 2 + left_fit[1] * y_eval + left_fit[2]) + (right_fit[0] * y_eval ** 2 + right_fit[1] * y_eval + right_fit[2])) / 2) - lane_center_pix
     center_offset_real_world_m = center_offset_img_space * xm_per_pix
 
     # Now our radius of curvature is in meters
