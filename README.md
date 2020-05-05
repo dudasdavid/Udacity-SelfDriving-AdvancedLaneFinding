@@ -1,19 +1,11 @@
-## Advanced Lane Finding
+## Project Writeup
+
+
+---
 [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
-![Lanes Image](./examples/example_output.jpg)
+[![Lanes Image](./output_files/output.png)](https://youtu.be/9tGN53eLzQA)
 
-In this project, your goal is to write a software pipeline to identify the lane boundaries in a video, but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
-
-Creating a great writeup:
----
-A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
-
-All that said, please be concise!  We're not looking for you to write a book here, just a brief description of how you passed each rubric point, and references to the relevant code :). 
-
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup.
-
-The Project
----
+**Advanced Lane Finding Project**
 
 The goals / steps of this project are the following:
 
@@ -26,14 +18,197 @@ The goals / steps of this project are the following:
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 
-The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images` are for testing your pipeline on single frames.  If you want to extract more test images from the videos, you can simply use an image writing method like `cv2.imwrite()`, i.e., you can read the video in frame by frame as usual, and for frames you want to save for later you can write to an image file.  
+[//]: # (Image References)
 
-To help the reviewer examine your work, please save examples of the output from each stage of your pipeline in the folder called `output_images`, and include a description in your writeup for the project of what each image shows.    The video called `project_video.mp4` is the video your pipeline should work well on.  
+[image1]: ./camera_cal/calibration.png "Undistorted"
+[image2]: ./output_files/camera_figures_straight_lines2.jpg "Road Transformed"
+[image3]: ./output_files/color_figures_test2.jpg "Color thresholds"
+[image4]: ./output_files/color_th_figures_test1.jpg "S threshold"
+[image5]: ./output_files/gradient_th_figures_straight_lines2.jpg "Gradient thresholds"
+[image6]: ./output_files/pipeline_figures_straight_lines1.jpg "Binary result"
+[image7]: ./examples/color_fit_lines.jpg "Fit Visual"
+[image8]: ./examples/example_output.jpg "Output"
+[video1]: ./project_video.mp4 "Video"
 
-The `challenge_video.mp4` video is an extra (and optional) challenge for you if you want to test your pipeline under somewhat trickier conditions.  The `harder_challenge.mp4` video is another optional challenge and is brutal!
+## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
+ 
 
-If you're feeling ambitious (again, totally optional though), don't stop there!  We encourage you to go out and take video of your own, calibrate your camera and show us how you would implement this project from scratch!
+---
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
 
+
+
+# Camera Calibration
+
+
+The code for the camera calibration can be found in `camera_calibration.py`. The calibration was done using OpenCV's `cv2.findChessboardCorners()` and `cv2.calibrateCamera()` functions. The `cv2.findChessboardCorners()` identifies "object points" in the (x, y, z) coordinates of the chessboard corners in the world. We are assuming that the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
+
+I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
+
+![alt text][image1]
+
+---
+
+# Pipeline (single images)
+
+`process_test_images.py` file was used to determine the necessary image tranformations and filter parameters. The `process_test_images.py` uses the matplotlib's pyplot package.
+
+### 1. Apply camera calibration and bird's view perspective transformations:
+
+First, I applied the camera undistortion, based on the previously identified camera calibration matrix.
+After that I selected the blue region for bird's perpective transform. To identify parallel lanes the blue region was transformed to the green region. 
+I chose the hardcode the source and destination points in the following manner:
+
+```python
+src_region = np.array(
+    [[[20, h],
+    [550, 440],
+    [w - 550, 440],
+    [w - 20, h]]])
+
+dst_region = np.array(
+    [[[360, h],
+    [0, 0],
+    [w - 0, 0],
+    [w - 360, h]]])
+```
+
+I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
+
+![alt text][image2]
+
+### 2. Apply different color filters. First row: RGB channels, second row: HLS channels, third row: HSV channels
+
+These transformations was done using OpenCV's `cv2.cvtColor()` function.
+
+![alt text][image3]
+
+Based on the results HLS's S channel was used to identify lines. I applied a binary threshold on the S channel.
+
+![alt text][image4]
+
+### 3. Gradient threshdols. I applied several gradient threshold filters, and finally combined them with the following logic:
+```python
+combined[(gradx == 1) | ((grady == 1) & (mag_binary == 1) & (dir_binary == 1))] = 1
+```
+
+![alt text][image5]
+
+
+### 4. Finally I combined the output of the gradient thresholds and the thresholded S channel into a single binary image:
+
+![alt text][image6]
+
+---
+
+# Pipeline (video)
+
+Based on the above thresholding, I built up the pipeline for video processing. It's not using matplotlib's pyplot interface anymore, only OpenCV functions.
+
+The code is well documented in the `main.py` so this Readme only highlights the most important parts.
+The `main.py` expects a single command line input `-i` that is a video or image file input. Example usage:
+`python main.py -i "project_video.mp4"`
+
+## Pipeline steps
+
+#### 1. Apply camera undistortion:
+```python
+undistorted = utils.undistort_image(img, mtx, dist)
+```
+where utils is the `helper_functions.py` file. Let's dive into `utils.undistort_image()`:
+```python
+def undistort_image(img, mtx, dist):
+    undist = cv2.undistort(img, mtx, dist, None, mtx)
+    return undist
+```
+It simply uses OpenCV's undistort function.
+
+#### 2. Calculate bird's view transformation matrices:
+Based on `src_region` and `dst_region` we can simply calculate the distortion matrix and the inverse matrix:
+```python
+src_region = np.array([[[20, h], [550, 440], [w - 550, 440], [w - 20, h]]])
+dst_region = np.array([[[360, h], [0, 0], [w - 0, 0], [w - 360, h]]])
+
+M, M_inv = utils.calc_transformation_matrices(src_region, dst_region)
+```
+
+#### 3. Calculate a region mask around the `src_region`:
+```python
+mask = np.zeros((h, w), dtype=np.uint8)
+ignore_mask_color = 255
+cv2.fillPoly(mask, src_region, ignore_mask_color)
+```
+
+#### 4. Calculate the S channel of the HLS color space and apply a bnary threshold on it. Finally apply the region mask on it:
+```python
+H, L, S = utils.convert_to_hls(undistorted)
+S = utils.threshold_binary(S, (50, 220))
+
+masked_S = cv2.bitwise_and(S, mask)
+```
+
+#### 5. Apply different gradient thresholding filters and combine the results. Finally apply the region mask on it and combine with the previous filtered S channel:
+```python
+gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
+grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
+mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(50, 200))
+dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
+
+combined = np.zeros((h, w), dtype=np.uint8)
+combined[(gradx == 1) | ((grady == 1) & (mag_binary == 1) & (dir_binary == 1))] = 1
+
+masked_combined = cv2.bitwise_and(combined, mask)
+
+result, result_binary = utils.stack_binaries(masked_combined, masked_S)
+```
+
+#### 6. Transform the binary image to bird's perspective and calculate the histogram of the bottom half of the image:
+```python
+birdseye = utils.warp_transform(result_binary*255, M)
+histogram = utils.hist(birdseye/255)
+```
+
+#### 7. If the lanes are reliable we can search the polynomial in the near range of the previous polynomial for both lines:
+```python
+if left_lane.reliable and right_lane.reliable:
+    leftx, lefty = utils.search_around_poly(birdseye, left_lane.get_poly())
+    rightx, righty = utils.search_around_poly(birdseye, right_lane.get_poly())
+```
+
+#### 8. If the lanes are NOT reliable we have to find the lines from scratch:
+```python
+leftx, lefty, rightx, righty, out_img = utils.find_lane_pixels(birdseye)
+```
+
+#### 9. Let's perform sanity check based on lane curvature and lane size, if the sanity check fails recover the previous sample and mark the lines as unreliable.
+
+#### 10. Finally color line pixels and transform the lane area back to the original image:
+```python
+# draw the lane finding results on the image
+out_img = utils.draw_lane_pixels(out_img, left_lane, color=(0, 0, 255))
+out_img = utils.draw_lane_pixels(out_img, right_lane)
+out_img = utils.draw_poly(out_img, left_lane, width=5)
+out_img = utils.draw_poly(out_img, right_lane, width=5)
+
+# un-warp the bird's view lane and overlay to the original image
+result = utils.draw_lane_area(birdseye, undistorted, left_lane, right_lane, M_inv)
+result = utils.draw_lane_lines(birdseye, result, left_lane, right_lane, M_inv, 10)
+```
+
+#### 11. To include more visual information on the video you can add small images to the top row of the final image:
+```python
+result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, masked_combined*255])
+```
+[![Lanes Image](./output_files/output.png)](https://youtu.be/9tGN53eLzQA)
+
+
+---
+
+### Remarks
+
+There are several issues with this type of lane detection algoritm, I collect the major issues I found during the implementation:
+1. Super slow. Really, this algorith can process cca. 3 frames per second with the 720p resolution
+2. Parameters are too sensitive for road, lighting, lane color changes. It's not possible to find a robust parameter set that rules them all
+3. Bird's view image transformation is very sensitive for the camera tilt that might change easily during driving (acceleration, deccelartion, road surface changes). To compensate this tilt deviation we need the camera's tilt angle that's easily accessible from a MEMS accelerometer
+
+Overall verdict: I suggest to use a semantic segmentation based neural network for this purpose that's much faster and more reliable.
