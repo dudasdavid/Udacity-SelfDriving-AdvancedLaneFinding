@@ -113,34 +113,35 @@ def convert_to_hsv(img):
     return H, S, V
 
 
-def compute_hls_white_yellow_binary(rgb_img):
-    """
-    Returns a binary thresholded image produced retaining only white and yellow elements on the picture
-    The provided image should be in RGB format
-    """
-    hls_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2HLS)
+# sharpen image with filter kernel
+def sharpen(img):
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    sharp = cv2.filter2D(img, -1, kernel)
 
-    # Compute a binary thresholded image where yellow is isolated from HLS components
-    img_hls_yellow_bin = np.zeros_like(hls_img[:, :, 0])
-    img_hls_yellow_bin[((hls_img[:, :, 0] >= 20) & (hls_img[:, :, 0] <= 35))
-                       & ((hls_img[:, :, 1] >= 50) & (hls_img[:, :, 1] <= 204))
-                       & ((hls_img[:, :, 2] >= 120) & (hls_img[:, :, 2] <= 255))
-                       ] = 1
+    return sharp
 
-    # Compute a binary thresholded image where white is isolated from HLS components
-    img_hls_white_bin = np.zeros_like(hls_img[:, :, 0])
-    img_hls_white_bin[((hls_img[:, :, 0] >= 50) & (hls_img[:, :, 0] <= 255))
-                      & ((hls_img[:, :, 1] >= 200) & (hls_img[:, :, 1] <= 255))
-                      & ((hls_img[:, :, 2] >= 100) & (hls_img[:, :, 2] <= 255))
-                      ] = 1
 
-    img_rgb_white_bin = threshold_binary(rgb_img[:,:,0], (190, 255))
+# Returns a binary thresholded image filtered to white and yellow lane lines
+def lane_color_filter(img):
+    H,L,S = convert_to_hls(img)
+    R,G,B = convert_to_rgb(img)
 
-    # Now combine both
-    img_hls_white_yellow_bin = np.zeros_like(hls_img[:, :, 0])
-    img_hls_white_yellow_bin[(img_hls_yellow_bin == 1) | (img_hls_white_bin == 1) | (img_rgb_white_bin == 1)] = 1
+    # Binary thresholded image where yellow is isolated from HLS components
+    hls_yellow_filtered = np.zeros_like(H)
+    hls_yellow_filtered[((H >= 20) & (H <= 35)) & ((L >= 50) & (L <= 204)) & ((S >= 120) & (S <= 255))] = 1
 
-    return img_hls_white_yellow_bin
+    # Binary thresholded image where white is isolated from HLS components
+    hls_white_filtered = np.zeros_like(H)
+    hls_white_filtered[((H >= 50) & (H <= 255)) & ((L >= 200) & (L <= 255)) & ((S >= 100) & (S <= 255))] = 1
+
+    # Binary thresholded image where white is isolated from RGB components
+    rgb_white_bin = threshold_binary(R, (190, 255))
+
+    # Combine filters
+    combined = np.zeros_like(H)
+    combined[(hls_yellow_filtered == 1) | (hls_white_filtered == 1) | (rgb_white_bin == 1)] = 1
+
+    return combined
 
 
 # Applies the Canny transform
@@ -570,6 +571,16 @@ def draw_lane_lines(warped_img, undist_img, left_lane, right_lane, M_inv, width)
     return result
 
 
+def saturation(value, threshold=5999.9):
+    if value > threshold:
+        return threshold
+    elif value < -1*threshold:
+        return -1*threshold
+    else:
+        return value
+
+
+
 # calculate lane curvature in real world m
 def calculate_lane_curvature(left_line, right_line):
     """
@@ -602,4 +613,4 @@ def calculate_lane_curvature(left_line, right_line):
     center_offset_img_space = (((left_fit[0] * y_eval ** 2 + left_fit[1] * y_eval + left_fit[2]) + (right_fit[0] * y_eval ** 2 + right_fit[1] * y_eval + right_fit[2])) / 2) - lane_center_pix
     center_offset_real_world_m = center_offset_img_space * xm_per_pix
 
-    return left_curverad, right_curverad, center_offset_real_world_m
+    return saturation(left_curverad), saturation(right_curverad), center_offset_real_world_m

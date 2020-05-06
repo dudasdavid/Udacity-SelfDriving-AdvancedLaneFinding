@@ -3,7 +3,7 @@
 
 ---
 [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
-[![Lanes Image](./output_files/output.png)](https://youtu.be/9tGN53eLzQA)
+[![Lanes Image](./output_files/output.png)](https://youtu.be/2PoAlSt-YRw)
 
 **Advanced Lane Finding Project**
 
@@ -139,23 +139,20 @@ ignore_mask_color = 255
 cv2.fillPoly(mask, src_region, ignore_mask_color)
 ```
 
-#### 4. Calculate the S channel of the HLS color space and apply a bnary threshold on it. Finally apply the region mask on it:
+#### 4. Apply a special color filter that extracts the white and yellow lane lines. But first, I apply a sharpening filter on the image because it results much better output:
 ```python
-H, L, S = utils.convert_to_hls(undistorted)
-S = utils.threshold_binary(S, (50, 220))
-
-masked_S = cv2.bitwise_and(S, mask)
+sharp = utils.sharpen(undistorted)
+combined_color = utils.lane_color_filter(sharp)
 ```
 
-#### 5. Apply different gradient thresholding filters and combine the results. Finally apply the region mask on it and combine with the previous filtered S channel:
+#### 5. Apply different gradient thresholding filters and combine the results. I didn't use gradient in y direction because there isn't any useful information I could extract from it. Finally apply the region mask on it and combine with the previous filtered S channel:
 ```python
-gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
-grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
-mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(50, 200))
-dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
+gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(70, 255))
+mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 255))
+dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(0.8, 1.1))
 
 combined = np.zeros((h, w), dtype=np.uint8)
-combined[(gradx == 1) | ((grady == 1) & (mag_binary == 1) & (dir_binary == 1))] = 1
+combined[(gradx == 1) | ((mag_binary == 1) & (dir_binary == 1))] = 1
 
 masked_combined = cv2.bitwise_and(combined, mask)
 
@@ -180,7 +177,14 @@ if left_lane.reliable and right_lane.reliable:
 leftx, lefty, rightx, righty, out_img = utils.find_lane_pixels(birdseye)
 ```
 
-#### 9. Let's perform sanity check based on lane curvature and lane size, if the sanity check fails recover the previous sample and mark the lines as unreliable.
+#### 9. Let's perform sanity checks on the lines and the lane. I defined the following checks:
+- If there aren't enough data points in the upper region of the image, the interpolation will become unreliable.
+- If the curvature of the two lane lines are in different direction
+- If there is too big width difference between the lane start and lane end
+- If the detected lane is too thin
+- If the detected lane is too wide
+
+If any of the sanity checks fail I recover the previous detected lane sample and mark the lines as unreliable.
 
 #### 10. Finally color line pixels and transform the lane area back to the original image:
 ```python
@@ -199,16 +203,20 @@ result = utils.draw_lane_lines(birdseye, result, left_lane, right_lane, M_inv, 1
 ```python
 result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, masked_combined*255])
 ```
-[![Lanes Image](./output_files/output.png)](https://youtu.be/9tGN53eLzQA)
+[![Lanes Image](./output_files/output.png)](https://youtu.be/2PoAlSt-YRw)
 
 
 ---
 
-### Remarks
+## Discussion
 
 There are several issues with this type of lane detection algoritm, I collect the major issues I found during the implementation:
-1. Super slow. Really, this algorith can process cca. 3 frames per second with the 720p resolution
-2. Parameters are too sensitive for road, lighting, lane color changes. It's not possible to find a robust parameter set that rules them all
-3. Bird's view image transformation is very sensitive for the camera tilt that might change easily during driving (acceleration, deccelartion, road surface changes). To compensate this tilt deviation we need the camera's tilt angle that's easily accessible from a MEMS accelerometer
+### 1. It's super slow. Really, this algorith can process cca. 3 frames per second with the 720p resolution
+This can be slightly increase with optimizations of the existing algorithm, but it's difficult to reach higher performance in python.
+Filters should executed in multiple threads and join these threads when both results are needed.
+### 2. Parameters are too sensitive for road color, lighting, lane color changes.
+It's not possible to find a robust parameter set that rules them all. The final algirithm easily becomes too complex that's hard to validate
+### 3. Perspective transformation is very sensitive for the camera tilt angle
+Tilt angle can change easily during driving (acceleration, deccelartion, road surface changes). To compensate this tilt deviation we need the camera's tilt angle that's easily accessible from a MEMS accelerometer. However the currently implemented hardcoded transformation matrices are not scalable for real use
 
-Overall verdict: I suggest to use a semantic segmentation based neural network for this purpose that's much faster and more reliable.
+### Overall verdict: I suggest to use a semantic segmentation based neural network for this purpose that's much faster and more reliable.
