@@ -38,6 +38,8 @@ def process_frame(img, left_lane, right_lane):
     #src_region = np.array([[[20, h], [300, 480], [w - 300, 480], [w - 20, h]]]) ### harder challenge video
     dst_region = np.array([[[360, h], [0, 0], [w - 0, 0], [w - 360, h]]])
 
+    mask_region = np.array([[[20, h], [400, 440], [w - 400, 440], [w - 20, h]]])
+
     # show selected regions on a copy image
     region_img = np.copy(undistorted)
     cv2.polylines(region_img, src_region, True, (0, 0, 255), 5)
@@ -49,42 +51,67 @@ def process_frame(img, left_lane, right_lane):
     # create a mask according to roi
     mask = np.zeros((h, w), dtype=np.uint8)
     ignore_mask_color = 255
-    cv2.fillPoly(mask, src_region, ignore_mask_color)
+    cv2.fillPoly(mask, mask_region, ignore_mask_color)
     # and create a 3 channel mask, too, if needed
     color_mask = np.dstack((mask, mask, mask))
 
     # calculate 1 channel images in HLS representation
-    H, L, S = utils.convert_to_hls(undistorted)
+    H, S, V = utils.convert_to_hsv(undistorted)
+    R, G, B = utils.convert_to_rgb(undistorted)
+    H, L, S_hls = utils.convert_to_hls(undistorted)
     # apply binary threshold on S channel
     # this might be different for different scenarios
-    S = utils.threshold_binary(S, (50, 220)) ### project video parameter
+    S = utils.threshold_binary(S, (170, 255)) ### project video parameter
     #S = utils.threshold_binary(S, (20, 150)) ### challenge video
     #S = utils.threshold_binary(S, (20, 255)) ### harder challenge video
+    R = utils.threshold_binary(R, (190, 255))
+
+    S_hls = utils.threshold_binary(S_hls, (80, 100))
 
     # apply roi mask on S channel
     masked_S = cv2.bitwise_and(S, mask)
+    masked_R = cv2.bitwise_and(R, mask)
+
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    sharp = cv2.filter2D(undistorted, -1, kernel)
 
     # apply various gradient thresholds
     # choose a Sobel kernel size first
-    ksize = 17  # Choose a larger odd number to smooth gradient measurements
+    ksize = 15 # Choose a larger odd number to smooth gradient measurements
 
     # Apply each of the thresholding functions
     # this might be different for different scenarios
-    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(50, 150))
+    gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(70, 255))
     #gradx = utils.abs_sobel_thresh(undistorted, orient='x', sobel_kernel=ksize, thresh=(60, 110)) ### challenge video
-    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(70, 110))
-    mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(50, 200))
-    dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(np.pi / 4, np.pi / 2))
+    grady = utils.abs_sobel_thresh(undistorted, orient='y', sobel_kernel=ksize, thresh=(120, 255))
+    mag_binary = utils.mag_thresh(undistorted, sobel_kernel=ksize, mag_thresh=(100, 255))
+    dir_binary = utils.dir_threshold(undistorted, sobel_kernel=ksize, thresh=(0.8, 1.1))
+
 
     # combine all gradient thresholds
     combined = np.zeros((h, w), dtype=np.uint8)
-    combined[(gradx == 1) | ((grady == 1) & (mag_binary == 1) & (dir_binary == 1))] = 1
+    combined[(gradx == 1) | ((mag_binary == 1) & (dir_binary == 1))] = 1
 
     # apply roi mask on gradient thresholds
     masked_combined = cv2.bitwise_and(combined, mask)
 
+    # combine color filters
+    combined_color = np.zeros((h, w), dtype=np.uint8)
+    combined_color[(masked_S == 1) | (masked_R == 1)] = 1
+
+
+
+
+
+    w_y = utils.compute_hls_white_yellow_binary(sharp)
+
+    birdseye_debug1 = utils.warp_transform(w_y*255, M)
+    birdseye_debug2 = utils.warp_transform(masked_combined*255, M)
+
+
+
     # stack gradient thresholds and color filter
-    result, result_binary = utils.stack_binaries(masked_combined, masked_S)
+    result, result_binary = utils.stack_binaries(masked_combined, w_y)
 
     # convert result to bird's view perspective
     birdseye = utils.warp_transform(result_binary*255, M)
@@ -120,14 +147,41 @@ def process_frame(img, left_lane, right_lane):
     end_width = right_lane.fitx[-1] - left_lane.fitx[-1]
     left_curvature, right_curvature, horizontal_offset = utils.calculate_lane_curvature(left_lane, right_lane)
 
+    print(abs(start_width - end_width), abs(start_width), abs(end_width), min(lefty), right_lane.fitx[0], left_lane.fitx[0])
+
+    '''
+    if right_lane.prevfitx is None:
+        right_lane.prevfitx = right_lane.fitx
+
+    if left_lane.prevfitx is None:
+        left_lane.prevfitx = left_lane.fitx
+
+    if abs(right_lane.fitx[0] - right_lane.prevfitx[0]) > 100:
+        right_lane.recovery()
+    else:
+        right_lane.prevfitx[0] = right_lane.fitx[0]
+
+    if abs(left_lane.fitx[0] - left_lane.prevfitx[0]) > 80:
+        left_lane.recovery()
+    else:
+        left_lane.prevfitx[0] = left_lane.fitx[0]
+        
+    '''
+
+    if min(lefty) > 350:
+        left_lane.recovery()
+
+    if min(righty) > 350:
+        right_lane.recovery()
+
     # if the 2 borders of the lane have opposite curvatures they aren't reliable and we have to recover the previous sample
     if (left_curvature > 0 and right_curvature < 0) or (left_curvature < 0 and right_curvature > 0):
         left_lane.recovery()
         right_lane.recovery()
 
-    #print(abs(start_width - end_width), abs(start_width), abs(end_width))
+
     #If the lane shape is abnormal or it's too thin in the beginning or in the end they aren't reliable and we have to recover the previous sample
-    if abs(start_width - end_width) > 100 or abs(start_width) < 400 or abs(end_width) < 350:
+    if abs(start_width - end_width) > 150 or abs(start_width) < 350 or abs(end_width) < 350 or abs(start_width) > 600 or abs(end_width) > 600:
         left_lane.recovery()
         right_lane.recovery()
 
@@ -142,7 +196,10 @@ def process_frame(img, left_lane, right_lane):
     result = utils.draw_lane_lines(birdseye, result, left_lane, right_lane, M_inv, 10)
 
     # stack small images to the original frame
-    result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, masked_combined*255])
+    #result = utils.add_small_pictures(result, [region_img, birdseye, hist, out_img, masked_combined*255])
+    result = utils.add_small_pictures(result, [region_img, hist, out_img, birdseye_debug1, birdseye_debug2])
+
+
     return result
 
 

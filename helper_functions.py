@@ -22,6 +22,7 @@ class Lane:
         # polynomial parameters
         self.ploty = None
         self.fitx = None
+        self.prevfitx = None
         # image shape, this can be a parameter for later use
         self.imshape = (720, 1280, 3)
 
@@ -110,6 +111,41 @@ def convert_to_hsv(img):
     V = hsv[:, :, 2]
 
     return H, S, V
+
+
+def compute_hls_white_yellow_binary(rgb_img):
+    """
+    Returns a binary thresholded image produced retaining only white and yellow elements on the picture
+    The provided image should be in RGB format
+    """
+    hls_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2HLS)
+
+    # Compute a binary thresholded image where yellow is isolated from HLS components
+    img_hls_yellow_bin = np.zeros_like(hls_img[:, :, 0])
+    img_hls_yellow_bin[((hls_img[:, :, 0] >= 20) & (hls_img[:, :, 0] <= 35))
+                       & ((hls_img[:, :, 1] >= 50) & (hls_img[:, :, 1] <= 204))
+                       & ((hls_img[:, :, 2] >= 120) & (hls_img[:, :, 2] <= 255))
+                       ] = 1
+
+    # Compute a binary thresholded image where white is isolated from HLS components
+    img_hls_white_bin = np.zeros_like(hls_img[:, :, 0])
+    img_hls_white_bin[((hls_img[:, :, 0] >= 50) & (hls_img[:, :, 0] <= 255))
+                      & ((hls_img[:, :, 1] >= 200) & (hls_img[:, :, 1] <= 255))
+                      & ((hls_img[:, :, 2] >= 100) & (hls_img[:, :, 2] <= 255))
+                      ] = 1
+
+    img_rgb_white_bin = threshold_binary(rgb_img[:,:,0], (190, 255))
+
+    # Now combine both
+    img_hls_white_yellow_bin = np.zeros_like(hls_img[:, :, 0])
+    img_hls_white_yellow_bin[(img_hls_yellow_bin == 1) | (img_hls_white_bin == 1) | (img_rgb_white_bin == 1)] = 1
+
+    return img_hls_white_yellow_bin
+
+
+# Applies the Canny transform
+def canny(img, low_threshold, high_threshold):
+    return cv2.Canny(img, low_threshold, high_threshold)
 
 
 # apply threshold and result a binary image
